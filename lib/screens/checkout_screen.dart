@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../controllers/cart_controller.dart';
 import '../widgets/custom_button.dart';
 
-/// Tela de finalização do pedido (Checkout)
+/// Tela de finalização do pedido (Checkout) redesenhada com Stitch.
 class CheckoutScreen extends StatefulWidget {
   final String storeSlug;
 
@@ -17,62 +17,206 @@ class CheckoutScreen extends StatefulWidget {
 class _CheckoutScreenState extends State<CheckoutScreen> {
   final _formKey = GlobalKey<FormState>();
 
+  // Controllers
+  final _nameController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _streetController = TextEditingController();
+  final _numberController = TextEditingController();
+  final _neighborhoodController = TextEditingController();
+
+  String _paymentMethod = 'pix';
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _phoneController.dispose();
+    _streetController.dispose();
+    _numberController.dispose();
+    _neighborhoodController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _sendWhatsApp() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    final cartController = context.read<CartController>();
+    final phoneNumber = '67999027513';
+
+    // Formata os itens
+    String itemsText = cartController.items
+        .map((item) {
+          return '*${item.quantity}x ${item.product.name}* - R\$ ${(item.product.price * item.quantity).toStringAsFixed(2).replaceAll('.', ',')}';
+        })
+        .join('\n');
+
+    // Formata o método de pagamento para exibição
+    String paymentDisplay = '';
+    switch (_paymentMethod) {
+      case 'pix':
+        paymentDisplay = 'PIX';
+        break;
+      case 'cartao':
+        paymentDisplay = 'Cartão (Entrega)';
+        break;
+      case 'dinheiro':
+        paymentDisplay = 'Dinheiro';
+        break;
+    }
+
+    // Formata a mensagem completa
+    String message =
+        '*NOVO PEDIDO*\n'
+        '--------------------------\n\n'
+        '*CLIENTE*\n'
+        'Nome: ${_nameController.text}\n'
+        'WhatsApp: ${_phoneController.text}\n\n'
+        '*ENTREGA*\n'
+        'Endereço: ${_streetController.text}, ${_numberController.text}\n'
+        'Bairro: ${_neighborhoodController.text}\n\n'
+        '*ITENS*\n'
+        '$itemsText\n\n'
+        '*PAGAMENTO*\n'
+        'Método: $paymentDisplay\n\n';
+
+    if (cartController.orderDescription.isNotEmpty) {
+      message +=
+          '*OBSERVAÇÕES*\n'
+          '${cartController.orderDescription}\n\n';
+    }
+
+    message +=
+        '💰 *TOTAL: R\$ ${cartController.totalPrice.toStringAsFixed(2).replaceAll('.', ',')}*';
+
+    final url = 'https://wa.me/$phoneNumber?text=${Uri.encodeFull(message)}';
+
+    if (await canLaunchUrl(Uri.parse(url))) {
+      await launchUrl(Uri.parse(url));
+      // Opcional: Limpar carrinho após enviar
+      // cartController.clear();
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Não foi possível abrir o WhatsApp')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final cartController = context.watch<CartController>();
-    final isDesktop = MediaQuery.of(context).size.width > 800;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Finalização do Pedido')),
+      backgroundColor: Colors.grey[50],
+      appBar: AppBar(
+        title: const Text(
+          'Finalizar Pedido',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        elevation: 0,
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
+      ),
       body: cartController.items.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(
-                    Icons.remove_shopping_cart,
-                    size: 80,
-                    color: Colors.grey,
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Carrinho vazio',
-                    style: TextStyle(fontSize: 18, color: Colors.grey),
-                  ),
-                  const SizedBox(height: 24),
-                  CustomButton(label: 'Voltar', onPressed: () => context.pop()),
-                ],
-              ),
-            )
+          ? Center(child: Text('Seu carrinho está vazio.'))
           : SingleChildScrollView(
-              padding: const EdgeInsets.all(24.0),
+              padding: const EdgeInsets.all(16.0),
               child: Center(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1000),
+                  constraints: const BoxConstraints(maxWidth: 800),
                   child: Form(
                     key: _formKey,
-                    child: Flex(
-                      direction: isDesktop ? Axis.horizontal : Axis.vertical,
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Expanded(
-                          flex: isDesktop ? 2 : 0,
-                          child: _buildFormFields(context),
-                        ),
-                        if (isDesktop) const SizedBox(width: 48),
-                        if (!isDesktop) const SizedBox(height: 32),
-                        Container(
-                          width: isDesktop ? 350 : double.infinity,
-                          padding: const EdgeInsets.all(24),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.surface,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: Colors.grey.withOpacity(0.1),
+                        _buildSectionCard(
+                          title: 'Seus Dados',
+                          icon: Icons.person_outline,
+                          children: [
+                            _buildTextField(
+                              label: 'Nome Completo',
+                              controller: _nameController,
+                              validator: (v) =>
+                                  v!.isEmpty ? 'Obrigatório' : null,
                             ),
-                          ),
-                          child: _buildOrderSummary(context, cartController),
+                            const SizedBox(height: 16),
+                            _buildTextField(
+                              label: 'WhatsApp',
+                              controller: _phoneController,
+                              keyboardType: TextInputType.phone,
+                              validator: (v) =>
+                                  v!.isEmpty ? 'Obrigatório' : null,
+                            ),
+                          ],
                         ),
+                        const SizedBox(height: 16),
+                        _buildSectionCard(
+                          title: 'Endereço de Entrega',
+                          icon: Icons.location_on_outlined,
+                          children: [
+                            _buildTextField(
+                              label: 'Rua / Logradouro',
+                              controller: _streetController,
+                              validator: (v) =>
+                                  v!.isEmpty ? 'Obrigatório' : null,
+                            ),
+                            const SizedBox(height: 16),
+                            Row(
+                              children: [
+                                Expanded(
+                                  flex: 1,
+                                  child: _buildTextField(
+                                    label: 'Nº',
+                                    controller: _numberController,
+                                    validator: (v) =>
+                                        v!.isEmpty ? 'Obrigatório' : null,
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  flex: 3,
+                                  child: _buildTextField(
+                                    label: 'Bairro',
+                                    controller: _neighborhoodController,
+                                    validator: (v) =>
+                                        v!.isEmpty ? 'Obrigatório' : null,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        _buildSectionCard(
+                          title: 'Forma de Pagamento',
+                          icon: Icons.payment_outlined,
+                          children: [
+                            _buildPaymentOption(
+                              id: 'pix',
+                              label: 'PIX (Instante)',
+                              icon: Icons.qr_code_scanner,
+                            ),
+                            _buildPaymentOption(
+                              id: 'cartao',
+                              label: 'Cartão na Entrega',
+                              icon: Icons.credit_card,
+                            ),
+                            _buildPaymentOption(
+                              id: 'dinheiro',
+                              label: 'Dinheiro',
+                              icon: Icons.payments_outlined,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+                        _buildSummary(cartController, colorScheme),
+                        const SizedBox(height: 32),
+                        CustomButton(
+                          label: 'Concluir Pedido no WhatsApp',
+                          onPressed: _sendWhatsApp,
+                        ),
+                        const SizedBox(height: 16),
                       ],
                     ),
                   ),
@@ -82,151 +226,166 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
-  Widget _buildFormFields(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          'Endereço de Entrega',
-          style: Theme.of(
-            context,
-          ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 16),
-        TextFormField(
-          decoration: const InputDecoration(
-            labelText: 'Rua',
-            border: OutlineInputBorder(),
+  Widget _buildSectionCard({
+    required String title,
+    required IconData icon,
+    required List<Widget> children,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
-        ),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: TextFormField(
-                decoration: const InputDecoration(
-                  labelText: 'Número',
-                  border: OutlineInputBorder(),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 20, color: Colors.grey[700]),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
                 ),
               ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: TextFormField(
-                decoration: const InputDecoration(
-                  labelText: 'Complemento',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 24),
-        Text(
-          'Forma de Pagamento',
-          style: Theme.of(
-            context,
-          ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 16),
-        DropdownButtonFormField<String>(
-          decoration: const InputDecoration(border: OutlineInputBorder()),
-          items: const [
-            DropdownMenuItem(value: 'pix', child: Text('PIX')),
-            DropdownMenuItem(value: 'cartao', child: Text('Cartão de Crédito')),
-            DropdownMenuItem(
-              value: 'dinheiro',
-              child: Text('Dinheiro (Pagamento na Entrega)'),
-            ),
-          ],
-          onChanged: (value) {},
-          hint: const Text('Selecione'),
-        ),
-      ],
+            ],
+          ),
+          const SizedBox(height: 20),
+          ...children,
+        ],
+      ),
     );
   }
 
-  Widget _buildOrderSummary(
-    BuildContext context,
-    CartController cartController,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Text(
-          'Resumo do Pedido',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+  Widget _buildTextField({
+    required String label,
+    required TextEditingController controller,
+    TextInputType? keyboardType,
+    String? Function(String?)? validator,
+  }) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: keyboardType,
+      validator: validator,
+      decoration: InputDecoration(
+        labelText: label,
+        filled: true,
+        fillColor: Colors.grey[50],
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey[200]!),
         ),
-        const SizedBox(height: 16),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text('Subtotal:'),
-            Text(
-              'R\$ ${cartController.totalPrice.toStringAsFixed(2).replaceAll('.', ',')}',
-            ),
-          ],
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey[200]!),
         ),
-        const SizedBox(height: 8),
-        const Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      ),
+    );
+  }
+
+  Widget _buildPaymentOption({
+    required String id,
+    required String label,
+    required IconData icon,
+  }) {
+    final isSelected = _paymentMethod == id;
+    final primaryColor = Theme.of(context).colorScheme.primary;
+
+    return GestureDetector(
+      onTap: () => setState(() => _paymentMethod = id),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isSelected ? primaryColor.withOpacity(0.05) : Colors.grey[50],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? primaryColor : Colors.grey[200]!,
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Row(
           children: [
-            Text('Taxa de Entrega:'),
+            Icon(icon, color: isSelected ? primaryColor : Colors.grey[600]),
+            const SizedBox(width: 12),
             Text(
-              'Grátis',
+              label,
               style: TextStyle(
-                color: Colors.green,
-                fontWeight: FontWeight.bold,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                color: isSelected ? primaryColor : Colors.black87,
               ),
             ),
+            const Spacer(),
+            if (isSelected)
+              Icon(Icons.check_circle, color: primaryColor, size: 20),
           ],
         ),
-        const Divider(height: 32),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text(
-              'Total:',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            Text(
-              'R\$ ${cartController.totalPrice.toStringAsFixed(2).replaceAll('.', ',')}',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).colorScheme.primary,
+      ),
+    );
+  }
+
+  Widget _buildSummary(CartController cartController, ColorScheme colorScheme) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Subtotal', style: TextStyle(color: Colors.grey)),
+              Text(
+                'R\$ ${cartController.totalPrice.toStringAsFixed(2).replaceAll('.', ',')}',
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 24),
-        CustomButton(
-          label: 'Confirmar Pedido',
-          onPressed: () {
-            // Simulação de finalização do pedido
-            showDialog(
-              context: context,
-              barrierDismissible: false,
-              builder: (ctx) => AlertDialog(
-                title: const Text('Pedido Confirmado!'),
-                content: const Text(
-                  'Seu pedido foi recebido e está sendo preparado.',
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Taxa de Entrega', style: TextStyle(color: Colors.grey)),
+              Text(
+                'Grátis',
+                style: TextStyle(
+                  color: Colors.green,
+                  fontWeight: FontWeight.bold,
                 ),
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      cartController.clear();
-                      Navigator.pop(ctx);
-                      context.go('/${widget.storeSlug}');
-                    },
-                    child: const Text('Voltar ao início'),
-                  ),
-                ],
               ),
-            );
-          },
-        ),
-      ],
+            ],
+          ),
+          const Divider(height: 24),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Total:',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              Text(
+                'R\$ ${cartController.totalPrice.toStringAsFixed(2).replaceAll('.', ',')}',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: colorScheme.primary,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

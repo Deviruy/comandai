@@ -13,11 +13,6 @@ class CartItemSummaryWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 0),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: Colors.black.withOpacity(0.02)),
-        ),
-      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [

@@ -12,8 +12,15 @@ class CartItem {
 /// Controlador responsável pelo carrinho de compras do usuário
 class CartController extends ChangeNotifier {
   final List<CartItem> _items = [];
+  String _orderDescription = '';
 
   List<CartItem> get items => _items;
+  String get orderDescription => _orderDescription;
+
+  set orderDescription(String value) {
+    _orderDescription = value;
+    notifyListeners();
+  }
 
   /// Valor total dos itens no carrinho
   double get totalPrice {
@@ -61,6 +68,7 @@ class CartController extends ChangeNotifier {
   /// Limpa todos os itens do carrinho (ex: finalização do pedido)
   void clear() {
     _items.clear();
+    _orderDescription = '';
     notifyListeners();
   }
 }

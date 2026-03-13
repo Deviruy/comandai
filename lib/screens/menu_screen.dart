@@ -166,13 +166,13 @@ class _MenuScreenState extends State<MenuScreen> {
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(30),
                             borderSide: BorderSide(
-                              color: Colors.grey.withValues(alpha: 0.2),
+                              color: Colors.grey.withOpacity(0.2),
                             ),
                           ),
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(30),
                             borderSide: BorderSide(
-                              color: Colors.grey.withValues(alpha: 0.2),
+                              color: Colors.grey.withOpacity(0.2),
                             ),
                           ),
                           focusedBorder: OutlineInputBorder(
@@ -465,7 +465,7 @@ class _MenuScreenState extends State<MenuScreen> {
       width: isDesktop ? 400 : MediaQuery.of(context).size.width * 0.85,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+        color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
         image: DecorationImage(
           image: NetworkImage(imageUrl),
           fit: BoxFit.cover,
@@ -478,8 +478,8 @@ class _MenuScreenState extends State<MenuScreen> {
             begin: Alignment.bottomCenter,
             end: Alignment.topCenter,
             colors: [
-              Colors.black.withValues(alpha: 0.8),
-              Colors.black.withValues(alpha: 0.2),
+              Colors.black.withOpacity(0.8),
+              Colors.black.withOpacity(0.2),
               Colors.transparent,
             ],
           ),
