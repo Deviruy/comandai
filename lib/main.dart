@@ -4,6 +4,7 @@ import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'controllers/store_controller.dart';
 import 'controllers/cart_controller.dart';
+import 'controllers/user_controller.dart';
 import 'models/store_model.dart';
 import 'package:flutter_web_plugins/url_strategy.dart'; // Necessário para ocultar o '#' no Flutter Web
 
@@ -16,6 +17,7 @@ void main() {
       providers: [
         ChangeNotifierProvider(create: (_) => StoreController()),
         ChangeNotifierProvider(create: (_) => CartController()),
+        ChangeNotifierProvider(create: (_) => UserController()),
       ],
       child: const ComandaiApp(),
     ),

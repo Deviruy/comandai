@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../controllers/cart_controller.dart';
+import '../controllers/user_controller.dart';
 import '../widgets/custom_button.dart';
 
 /// Tela de finalização do pedido (Checkout) redesenhada com Stitch.
+/// Esta tela coleta os dados do cliente, endereço e forma de pagamento
+/// antes de enviar o pedido final via WhatsApp.
 class CheckoutScreen extends StatefulWidget {
   final String storeSlug;
 
@@ -17,9 +20,8 @@ class CheckoutScreen extends StatefulWidget {
 class _CheckoutScreenState extends State<CheckoutScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  // Controllers
+  // Controladores de texto para os campos do formulário
   final _nameController = TextEditingController();
-  final _phoneController = TextEditingController();
   final _streetController = TextEditingController();
   final _numberController = TextEditingController();
   final _neighborhoodController = TextEditingController();
@@ -27,29 +29,76 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   String _paymentMethod = 'pix';
 
   @override
+  void initState() {
+    super.initState();
+    // Inicia a escuta das mudanças no UserController para preencher os campos
+    // assim que os dados forem carregados do SharedPreferences.
+    final userController = context.read<UserController>();
+    
+    if (userController.isLoaded) {
+      _populateFields(userController);
+    } else {
+      userController.addListener(_onUserLoaded);
+    }
+  }
+
+  /// Callback chamado quando os dados do usuário terminam de carregar.
+  void _onUserLoaded() {
+    final userController = context.read<UserController>();
+    if (userController.isLoaded) {
+      _populateFields(userController);
+      userController.removeListener(_onUserLoaded);
+    }
+  }
+
+  /// Preenche os campos de texto com os dados do controlador.
+  void _populateFields(UserController userController) {
+    if (mounted) {
+      setState(() {
+        _nameController.text = userController.name;
+        _streetController.text = userController.street;
+        _numberController.text = userController.number;
+        _neighborhoodController.text = userController.neighborhood;
+      });
+    }
+  }
+
+  @override
   void dispose() {
+    // Garante que o listener seja removido para evitar vazamento de memória
+    context.read<UserController>().removeListener(_onUserLoaded);
+    // Libera os recursos dos controladores ao fechar a tela
     _nameController.dispose();
-    _phoneController.dispose();
     _streetController.dispose();
     _numberController.dispose();
     _neighborhoodController.dispose();
     super.dispose();
   }
 
+  /// Gera a mensagem formatada e abre o WhatsApp para o número configurado.
   Future<void> _sendWhatsApp() async {
     if (!_formKey.currentState!.validate()) return;
 
     final cartController = context.read<CartController>();
+    final userController = context.read<UserController>();
     final phoneNumber = '67999027513';
 
-    // Formata os itens
+    // Salva os dados atuais do usuário localmente para os próximos pedidos
+    await userController.saveUser(
+      name: _nameController.text,
+      street: _streetController.text,
+      number: _numberController.text,
+      neighborhood: _neighborhoodController.text,
+    );
+
+    // Formata a lista de itens do carrinho
     String itemsText = cartController.items
         .map((item) {
           return '*${item.quantity}x ${item.product.name}* - R\$ ${(item.product.price * item.quantity).toStringAsFixed(2).replaceAll('.', ',')}';
         })
         .join('\n');
 
-    // Formata o método de pagamento para exibição
+    // Mapeia o ID do método de pagamento para um nome amigável
     String paymentDisplay = '';
     switch (_paymentMethod) {
       case 'pix':
@@ -63,13 +112,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         break;
     }
 
-    // Formata a mensagem completa
-    String message =
-        '*NOVO PEDIDO*\n'
+    // Constrói a mensagem completa do pedido
+    String message = '*NOVO PEDIDO*\n'
         '--------------------------\n\n'
         '*CLIENTE*\n'
-        'Nome: ${_nameController.text}\n'
-        'WhatsApp: ${_phoneController.text}\n\n'
+        'Nome: ${_nameController.text}\n\n'
         '*ENTREGA*\n'
         'Endereço: ${_streetController.text}, ${_numberController.text}\n'
         'Bairro: ${_neighborhoodController.text}\n\n'
@@ -79,20 +126,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'Método: $paymentDisplay\n\n';
 
     if (cartController.orderDescription.isNotEmpty) {
-      message +=
-          '*OBSERVAÇÕES*\n'
+      message += '*OBSERVAÇÕES*\n'
           '${cartController.orderDescription}\n\n';
     }
 
-    message +=
-        '💰 *TOTAL: R\$ ${cartController.totalPrice.toStringAsFixed(2).replaceAll('.', ',')}*';
+    message += '💰 *TOTAL: R\$ ${cartController.totalPrice.toStringAsFixed(2).replaceAll('.', ',')}*';
 
     final url = 'https://wa.me/$phoneNumber?text=${Uri.encodeFull(message)}';
 
     if (await canLaunchUrl(Uri.parse(url))) {
       await launchUrl(Uri.parse(url));
-      // Opcional: Limpar carrinho após enviar
-      // cartController.clear();
     } else {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -119,7 +162,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         foregroundColor: Colors.black,
       ),
       body: cartController.items.isEmpty
-          ? Center(child: Text('Seu carrinho está vazio.'))
+          ? Center(child: const Text('Seu carrinho está vazio.'))
           : SingleChildScrollView(
               padding: const EdgeInsets.all(16.0),
               child: Center(
@@ -130,6 +173,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        // Seção de dados pessoais
                         _buildSectionCard(
                           title: 'Seus Dados',
                           icon: Icons.person_outline,
@@ -140,17 +184,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               validator: (v) =>
                                   v!.isEmpty ? 'Obrigatório' : null,
                             ),
-                            const SizedBox(height: 16),
-                            _buildTextField(
-                              label: 'WhatsApp',
-                              controller: _phoneController,
-                              keyboardType: TextInputType.phone,
-                              validator: (v) =>
-                                  v!.isEmpty ? 'Obrigatório' : null,
-                            ),
                           ],
                         ),
                         const SizedBox(height: 16),
+                        // Seção de endereço
                         _buildSectionCard(
                           title: 'Endereço de Entrega',
                           icon: Icons.location_on_outlined,
@@ -188,6 +225,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           ],
                         ),
                         const SizedBox(height: 16),
+                        // Seção de pagamento
                         _buildSectionCard(
                           title: 'Forma de Pagamento',
                           icon: Icons.payment_outlined,
@@ -210,8 +248,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           ],
                         ),
                         const SizedBox(height: 24),
+                        // Resumo financeiro
                         _buildSummary(cartController, colorScheme),
                         const SizedBox(height: 32),
+                        // Botão de ação principal
                         CustomButton(
                           label: 'Concluir Pedido no WhatsApp',
                           onPressed: _sendWhatsApp,
@@ -226,6 +266,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
+  /// Constrói um cartão de seção com ícone e título.
   Widget _buildSectionCard({
     required String title,
     required IconData icon,
@@ -267,6 +308,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
+  /// Constrói um campo de texto estilizado.
   Widget _buildTextField({
     required String label,
     required TextEditingController controller,
@@ -293,6 +335,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
+  /// Constrói uma opção de pagamento selecionável.
   Widget _buildPaymentOption({
     required String id,
     required String label,
@@ -334,6 +377,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
+  /// Constrói o resumo de valores (subtotal, taxa, total).
   Widget _buildSummary(CartController cartController, ColorScheme colorScheme) {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -389,3 +433,4 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 }
+
